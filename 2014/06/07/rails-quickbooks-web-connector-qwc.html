@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+
+  <head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <title>Rails &amp; Quickbooks Web Connector (QWC)</title>
+  <meta name="description" content="Recently I have needed to integrate a Quickbooks Desktop instance with my Rails app.  As of Summer 2013 Intuit has deprecated the REST API whereby a client c...">
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="http://localhost:4000/2014/06/07/rails-quickbooks-web-connector-qwc.html">
+  <link rel="alternate" type="application/rss+xml" title="Cody Caughlan: Blog" href="/feed.xml">
+  
+  
+</head>
+
+
+  <body>
+
+    <header class="site-header" role="banner">
+
+  <div class="wrapper">
+    
+    
+    <a class="site-title" href="/">Cody Caughlan: Blog</a>
+
+    
+      <nav class="site-nav">
+        <input type="checkbox" id="nav-trigger" class="nav-trigger" />
+        <label for="nav-trigger">
+          <span class="menu-icon">
+            <svg viewBox="0 0 18 15" width="18px" height="15px">
+              <path fill="#424242" d="M18,1.484c0,0.82-0.665,1.484-1.484,1.484H1.484C0.665,2.969,0,2.304,0,1.484l0,0C0,0.665,0.665,0,1.484,0 h15.031C17.335,0,18,0.665,18,1.484L18,1.484z"/>
+              <path fill="#424242" d="M18,7.516C18,8.335,17.335,9,16.516,9H1.484C0.665,9,0,8.335,0,7.516l0,0c0-0.82,0.665-1.484,1.484-1.484 h15.031C17.335,6.031,18,6.696,18,7.516L18,7.516z"/>
+              <path fill="#424242" d="M18,13.516C18,14.335,17.335,15,16.516,15H1.484C0.665,15,0,14.335,0,13.516l0,0 c0-0.82,0.665-1.484,1.484-1.484h15.031C17.335,12.031,18,12.696,18,13.516L18,13.516z"/>
+            </svg>
+          </span>
+        </label>
+
+        <div class="trigger">
+          <a class="page-link" href="http://www.codycaughlan.com">&raquo; CodyCaughlan.com</a>
+
+          
+            
+            
+          
+            
+            
+          
+            
+            
+          
+            
+            
+          
+        </div>
+      </nav>
+    
+  </div>
+</header>
+
+
+    <main class="page-content" aria-label="Content">
+      <div class="wrapper">
+        <article class="post" itemscope itemtype="http://schema.org/BlogPosting">
+
+  <header class="post-header">
+    <h1 class="post-title" itemprop="name headline">Rails &amp; Quickbooks Web Connector (QWC)</h1>
+    <p class="post-meta">
+      <time datetime="2014-06-07T23:51:00-07:00" itemprop="datePublished">
+        
+        Jun 7, 2014
+      </time>
+      </p>
+  </header>
+
+  <div class="post-content" itemprop="articleBody">
+    <p>Recently I have needed to integrate a Quickbooks Desktop instance with my Rails app. </p>
+<p>As of Summer 2013 Intuit has deprecated the REST API whereby a client can communicate with a Quickbooks Desktop instance via REST. This leaves either the QWC route or straight-up Windows COM programming. I&rsquo;d rather hit my thumbs with a 10 lb. sledge than use COM. So QWC it is!</p>
+<p>The QWC approach uses SOAP - which stands for Slippery Obtuse Alligator Playtime. Which is a perfectly apt description of the byzantine SOAP protocol.</p>
+
+<p>Fortunately the WashOut gem does most of the heavy lifting. The hardest part was properly configuring the WashOut endpoint. Check out this Gist which contains the pertinent parts:</p>
+<p>
+<script src="https://gist.github.com/ruckus/e62d4200deef7e376294.js" type="text/javascript"></script></p>
+<p>In my case I have Quickbooks Pro 2013 running in a VMWare instance on a OS X host. My Rails app is running on the OS X host. Thus we need to have a publicly accessible URL for the AppUrl in the QWC config. Which is really my Rails apps in development exposed to the World Wide Web. </p>
+<p>I have found the <a href="https://ngrok.com/">ngrok</a> service to be fantastic for this. I run my Rails app locally on port 3000, then run `ngrok 3000`. I am given an https URL which I can then use in the `.qwc` file.</p>
+
+  </div>
+
+  
+</article>
+
+      </div>
+    </main>
+
+    <footer class="site-footer">
+
+  <div class="wrapper">
+
+    <h2 class="footer-heading">Cody Caughlan: Blog</h2>
+
+    <div class="footer-col-wrapper">
+      <div class="footer-col footer-col-1">
+        <ul class="contact-list">
+          <li>
+            
+              Cody Caughlan: Blog
+            
+            </li>
+            
+            <li><a href="mailto:codycaughlan@gmail.com">codycaughlan@gmail.com</a></li>
+            
+        </ul>
+      </div>
+
+      <div class="footer-col footer-col-2">
+        <ul class="social-media-list">
+          
+
+          
+        </ul>
+      </div>
+
+      <div class="footer-col footer-col-3">
+        <p>Notes from Monkeys</p>
+      </div>
+    </div>
+
+  </div>
+
+</footer>
+
+
+  </body>
+
+</html>

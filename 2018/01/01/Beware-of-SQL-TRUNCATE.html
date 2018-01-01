@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+
+  <head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <title>Beware of SQL TRUNCATE and the locking it requires</title>
+  <meta name="description" content="This is also a story about how the worker tier affected the database which affected the web tier.">
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="http://localhost:4000/2018/01/01/Beware-of-SQL-TRUNCATE.html">
+  <link rel="alternate" type="application/rss+xml" title="Cody Caughlan: Blog" href="/feed.xml">
+  
+  
+</head>
+
+
+  <body>
+
+    <header class="site-header" role="banner">
+
+  <div class="wrapper">
+    
+    
+    <a class="site-title" href="/">Cody Caughlan: Blog</a>
+
+    
+      <nav class="site-nav">
+        <input type="checkbox" id="nav-trigger" class="nav-trigger" />
+        <label for="nav-trigger">
+          <span class="menu-icon">
+            <svg viewBox="0 0 18 15" width="18px" height="15px">
+              <path fill="#424242" d="M18,1.484c0,0.82-0.665,1.484-1.484,1.484H1.484C0.665,2.969,0,2.304,0,1.484l0,0C0,0.665,0.665,0,1.484,0 h15.031C17.335,0,18,0.665,18,1.484L18,1.484z"/>
+              <path fill="#424242" d="M18,7.516C18,8.335,17.335,9,16.516,9H1.484C0.665,9,0,8.335,0,7.516l0,0c0-0.82,0.665-1.484,1.484-1.484 h15.031C17.335,6.031,18,6.696,18,7.516L18,7.516z"/>
+              <path fill="#424242" d="M18,13.516C18,14.335,17.335,15,16.516,15H1.484C0.665,15,0,14.335,0,13.516l0,0 c0-0.82,0.665-1.484,1.484-1.484h15.031C17.335,12.031,18,12.696,18,13.516L18,13.516z"/>
+            </svg>
+          </span>
+        </label>
+
+        <div class="trigger">
+          <a class="page-link" href="http://www.codycaughlan.com">&raquo; CodyCaughlan.com</a>
+
+          
+            
+            
+          
+            
+            
+          
+            
+            
+          
+            
+            
+          
+        </div>
+      </nav>
+    
+  </div>
+</header>
+
+
+    <main class="page-content" aria-label="Content">
+      <div class="wrapper">
+        <article class="post" itemscope itemtype="http://schema.org/BlogPosting">
+
+  <header class="post-header">
+    <h1 class="post-title" itemprop="name headline">Beware of SQL TRUNCATE and the locking it requires</h1>
+    <p class="post-meta">
+      <time datetime="2018-01-01T00:00:00-08:00" itemprop="datePublished">
+        
+        Jan 1, 2018
+      </time>
+      </p>
+  </header>
+
+  <div class="post-content" itemprop="articleBody">
+    <p>This is also a story about how the worker tier affected the database which affected the web tier.</p>
+
+<p>Vinosmith is a Rails-based stack. There are 3 primary tiers:</p>
+
+
+<ol>
+  <li>Web - Unicorn/nginx</li>
+  <li>Resque - asynchronous workers</li>
+  <li>Postgres/Redis</li>
+</ol>
+
+<p>The Dashboard screen features a rollup data set which is calculated and stored in Redis for quick lookup. There is a scheduled
+job which runs at 6AM to calculate this data and insert into Redis.</p>
+
+<p>The background job also clears out all rows and re-populates a database table as part of the re-calculation process.</p>
+
+<p>Because I was doing an unqualified <code>DELETE</code> on the table I thought that an <code>TRUNCATE</code> statement
+would be superior to a raw <code>DELETE</code> -- so the <code>TRUNCATE</code> has been in places for over 4 years now.</p>
+
+<p>Most of our customers are based on the West Coast of California and also work a normal schedule of 9AM - 5PM. </p>
+
+<p>Sporadically over the last few months I have gotten notifications from the AWS Elastic Load Balancer Cloud Watch alarm that no healthy hosts were available - thus bringing down the site. </p>
+
+<p>All of these notifications came in about 6AM and then subsided about 2-3 minutes later. But during that 2-3 minute window the site was basically unusable. But it happened rarely enough that I kind of forgot about it and I chalked it up to EC2 or ELB flakiness.</p>
+
+<p>I also <em>assumed</em> that no one really noticed the issue because it was at 6AM ... and I know how few (if any) of our customers are using the product that early in the morning... </p>
+
+<p>But of course, eventually a Customer did notice and thus I prioritized finding the cause and a solution.</p>
+
+<p>Looking in the nginx logs I can see entries where nginx cannot find an upstream Unicorn worker:
+
+<code>
+nginx.error.log:2017/12/29 14:02:11 [error] 1099#0: *13760186 upstream timed out (110: Connection timed out) while reading response header from upstream, client: www.xxx.yyy.zzz, server: *.vinosmith.com, request: "GET /health-check HTTP/1.1", upstream: "http://unix:/tmp/unicorn.vinosmith.sock/health-check", host: "www.xxx.yyy.zzz"
+</code>
+
+</p>
+
+<p>There are multiple web boxes in the cluster, thus multiple Unicorn/nginx instances and looking in the logs on each instance for that same time frame I can see similar log lines.</p>
+
+<p>So that rules out one machine getting overloaded and thus maybe unable to serve requests. Which sounds crazy, but possible. But this was affecting all instances ...</p>
+
+<p>I then looked in NewRelic and found that during that timeframe - shortly after 6:00AM - the Ruby VM garbage collector started going crazy, which is fine it on itself, but looking at the NewRelic report across all instances (web + worker) I traced it down to a particular Resque background job which happens to run at 6AM.</p>
+
+<p>Looking at that job it became clear what the problem was:</p>
+
+<ol>
+<li>The job opens a DB transaction</li>
+<li>The job then executes a <code>TRUNCATE</code> statement to clear out the database table.</li>
+<li>The job then proceeds to run lots of other <code>SELECT</code>s and <code>INSERT</code>s -- doing its thing, which is great.</li>
+<li>
+
+<p>The problem was the <code>TRUNCATE</code> statement and looking at the Postgres documentation I found the crux:
+
+<p>From: <a href="https://www.postgresql.org/docs/9.1/static/sql-truncate.html">https://www.postgresql.org/docs/9.1/static/sql-truncate.html</a>
+
+<br /><br /> down in the <strong>Notes</strong> section:
+
+<em>TRUNCATE acquires an ACCESS EXCLUSIVE lock on each table it operates on, which blocks all other concurrent operations on the table. When RESTART IDENTITY is specified, any sequences that are to be restarted are likewise locked exclusively. If concurrent access to a table is required, then the DELETE command should be used instead.</em>
+
+</p>
+
+</li>
+</ol>
+
+<p>The key line being: <strong>If concurrent access to a table is required, then the DELETE command should be used instead.</strong></p>
+
+<p>So what was happening was that the <code>TRUNCATE</code> was requireing an exclusive lock on the table; the web clients were hitting the Dashboard which in turn triggers a <code>request-from-cache-or-recalculate</code> routine which also happens to hit that DB table. These requests were getting blocked in a spin loop and then tying up that Unicorn instance. Customers were either spawning a new browser tab and hitting the same screen - thinking their busy request was a fluke. The load balancer was unable to hit the Rails endpoint for a health-check and thus eventually it pulled out all instances from the cluster, bringing down the site.</p>
+
+<p>Whew...</p>
+
+<p>Once I identified the issue the solution was clear:
+
+<ul>
+  <li>Switch to <code>DELETE</code> from <code>TRUNCATE</code></li>
+  <li>Not that it matters at this point, but move the job to a more off-time slot like 3AM instead of 6AM.</li>
+</ul>
+
+<p>Win!</p>
+
+
+
+  </div>
+
+  
+</article>
+
+      </div>
+    </main>
+
+    <footer class="site-footer">
+
+  <div class="wrapper">
+
+    <h2 class="footer-heading">Cody Caughlan: Blog</h2>
+
+    <div class="footer-col-wrapper">
+      <div class="footer-col footer-col-1">
+        <ul class="contact-list">
+          <li>
+            
+              Cody Caughlan: Blog
+            
+            </li>
+            
+            <li><a href="mailto:codycaughlan@gmail.com">codycaughlan@gmail.com</a></li>
+            
+        </ul>
+      </div>
+
+      <div class="footer-col footer-col-2">
+        <ul class="social-media-list">
+          
+
+          
+        </ul>
+      </div>
+
+      <div class="footer-col footer-col-3">
+        <p>Notes from Monkeys</p>
+      </div>
+    </div>
+
+  </div>
+
+</footer>
+
+
+  </body>
+
+</html>
